@@ -6,6 +6,7 @@
 #define RXCPP_RX_SCHEDULER_CURRENT_THREAD_HPP
 
 #include "../rx-includes.hpp"
+#include "threadlocal.hpp"
 
 namespace rxcpp {
 
@@ -31,8 +32,8 @@ public:
     };
 
 private:
-    static current_thread_queue_type*& current_thread_queue() {
-        static RXCPP_THREAD_LOCAL current_thread_queue_type* queue;
+    static thread_local_storage<current_thread_queue_type>& current_thread_queue() {
+        static thread_local_storage<current_thread_queue_type> queue;
         return queue;
     }
 
@@ -110,7 +111,7 @@ public:
         if (!current_thread_queue()) {
             abort();
         }
-        destroy(current_thread_queue());
+        destroy(current_thread_queue().get()); // Not sure if this will double-free..
         current_thread_queue() = nullptr;
     }
 };
