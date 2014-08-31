@@ -61,7 +61,7 @@ public:
         return current_thread_queue()->queue.top();
     }
     static void pop() {
-        auto state = current_thread_queue();
+        auto& state = current_thread_queue();
         if (!state) {
             abort();
         }
@@ -72,7 +72,7 @@ public:
         }
     }
     static void push(item_type item) {
-        auto state = current_thread_queue();
+        auto& state = current_thread_queue();
         if (!state) {
             abort();
         }
