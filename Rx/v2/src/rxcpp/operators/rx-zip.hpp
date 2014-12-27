@@ -2,8 +2,8 @@
 
 #pragma once
 
-#if !defined(RXCPP_OPERATORS_RX_COMBINE_LATEST_HPP)
-#define RXCPP_OPERATORS_RX_COMBINE_LATEST_HPP
+#if !defined(RXCPP_OPERATORS_RX_ZIP_HPP)
+#define RXCPP_OPERATORS_RX_ZIP_HPP
 
 #include "../rx-includes.hpp"
 
@@ -14,10 +14,9 @@ namespace operators {
 namespace detail {
 
 template<class Coordination, class Selector, class... ObservableN>
-struct combine_latest_traits {
-
+struct zip_traits {
     typedef std::tuple<ObservableN...> tuple_source_type;
-    typedef std::tuple<rxu::detail::maybe<typename ObservableN::value_type>...> tuple_source_value_type;
+    typedef std::tuple<std::list<typename ObservableN::value_type>...> tuple_source_values_type;
 
     typedef typename std::decay<Selector>::type selector_type;
     typedef typename std::decay<Coordination>::type coordination_type;
@@ -28,20 +27,20 @@ struct combine_latest_traits {
     template<class CS, class... CVN>
     static tag_not_valid check(...);
 
-    static_assert(!std::is_same<decltype(check<selector_type, typename ObservableN::value_type...>(0)), tag_not_valid>::value, "combine_latest Selector must be a function with the signature value_type(Observable::value_type...)");
+    static_assert(!std::is_same<decltype(check<selector_type, typename ObservableN::value_type...>(0)), tag_not_valid>::value, "zip Selector must be a function with the signature value_type(Observable::value_type...)");
 
     typedef decltype(check<selector_type, typename ObservableN::value_type...>(0)) value_type;
 };
 
 template<class Coordination, class Selector, class... ObservableN>
-struct combine_latest : public operator_base<typename combine_latest_traits<Coordination, Selector, ObservableN...>::value_type>
+struct zip : public operator_base<typename zip_traits<Coordination, Selector, ObservableN...>::value_type>
 {
-    typedef combine_latest<Coordination, Selector, ObservableN...> this_type;
+    typedef zip<Coordination, Selector, ObservableN...> this_type;
 
-    typedef combine_latest_traits<Coordination, Selector, ObservableN...> traits;
+    typedef zip_traits<Coordination, Selector, ObservableN...> traits;
 
     typedef typename traits::tuple_source_type tuple_source_type;
-    typedef typename traits::tuple_source_value_type tuple_source_value_type;
+    typedef typename traits::tuple_source_values_type tuple_source_values_type;
 
     typedef typename traits::selector_type selector_type;
 
@@ -62,7 +61,7 @@ struct combine_latest : public operator_base<typename combine_latest_traits<Coor
     };
     values initial;
 
-    combine_latest(coordination_type sf, selector_type s, tuple_source_type ts)
+    zip(coordination_type sf, selector_type s, tuple_source_type ts)
         : initial(std::move(ts), std::move(s), std::move(sf))
     {
     }
@@ -93,19 +92,12 @@ struct combine_latest : public operator_base<typename combine_latest_traits<Coor
             innercs,
         // on_next
             [state](source_value_type st) {
-
-                auto& value = std::get<Index>(state->latest);
-
-                if (value.empty()) {
-                    ++state->valuesSet;
-                }
-
-                value.reset(st);
-
-                if (state->valuesSet == sizeof... (ObservableN)) {
+                auto& values = std::get<Index>(state->pending);
+                values.push_back(st);
+                if (rxu::apply_to_each(state->pending, rxu::list_not_empty(), rxu::all_values_true())) {
                     auto selectedResult = on_exception(
                         [&](){
-                            return rxu::apply(rxu::surely(state->latest), state->selector);
+                            return rxu::apply_to_each(state->pending, rxu::extract_list_front(), state->selector);
                         },
                         state->out);
                     if (selectedResult.empty()) {
@@ -145,11 +137,11 @@ struct combine_latest : public operator_base<typename combine_latest_traits<Coor
 
         typedef Subscriber output_type;
 
-        struct combine_latest_state_type
-            : public std::enable_shared_from_this<combine_latest_state_type>
+        struct zip_state_type
+            : public std::enable_shared_from_this<zip_state_type>
             , public values
         {
-            combine_latest_state_type(values i, coordinator_type coor, output_type oarg)
+            zip_state_type(values i, coordinator_type coor, output_type oarg)
                 : values(std::move(i))
                 , pendingCompletions(sizeof... (ObservableN))
                 , valuesSet(0)
@@ -162,7 +154,7 @@ struct combine_latest : public operator_base<typename combine_latest_traits<Coor
             // subscriptions have received on_completed
             mutable int pendingCompletions;
             mutable int valuesSet;
-            mutable tuple_source_value_type latest;
+            mutable tuple_source_values_type pending;
             coordinator_type coordinator;
             output_type out;
         };
@@ -170,14 +162,14 @@ struct combine_latest : public operator_base<typename combine_latest_traits<Coor
         auto coordinator = initial.coordination.create_coordinator(scbr.get_subscription());
 
         // take a copy of the values for each subscription
-        auto state = std::shared_ptr<combine_latest_state_type>(new combine_latest_state_type(initial, std::move(coordinator), std::move(scbr)));
+        auto state = std::shared_ptr<zip_state_type>(new zip_state_type(initial, std::move(coordinator), std::move(scbr)));
 
         subscribe_all(state, typename rxu::values_from<int, sizeof...(ObservableN)>::type());
     }
 };
 
 template<class Coordination, class Selector, class... ObservableN>
-class combine_latest_factory
+class zip_factory
 {
     typedef typename std::decay<Coordination>::type coordination_type;
     typedef typename std::decay<Selector>::type selector_type;
@@ -189,12 +181,12 @@ class combine_latest_factory
 
     template<class... YObservableN>
     auto make(std::tuple<YObservableN...> source)
-        ->      observable<typename combine_latest<Coordination, Selector, YObservableN...>::value_type, combine_latest<Coordination, Selector, YObservableN...>> {
-        return  observable<typename combine_latest<Coordination, Selector, YObservableN...>::value_type, combine_latest<Coordination, Selector, YObservableN...>>(
-                                    combine_latest<Coordination, Selector, YObservableN...>(coordination, selector, std::move(source)));
+        ->      observable<typename zip<Coordination, Selector, YObservableN...>::value_type, zip<Coordination, Selector, YObservableN...>> {
+        return  observable<typename zip<Coordination, Selector, YObservableN...>::value_type, zip<Coordination, Selector, YObservableN...>>(
+                                    zip<Coordination, Selector, YObservableN...>(coordination, selector, std::move(source)));
     }
 public:
-    combine_latest_factory(coordination_type sf, selector_type s, ObservableN... on)
+    zip_factory(coordination_type sf, selector_type s, ObservableN... on)
         : coordination(std::move(sf))
         , selector(std::move(s))
         , sourcen(std::make_tuple(std::move(on)...))
@@ -211,9 +203,9 @@ public:
 }
 
 template<class Coordination, class Selector, class... ObservableN>
-auto combine_latest(Coordination sf, Selector s, ObservableN... on)
-    ->      detail::combine_latest_factory<Coordination, Selector, ObservableN...> {
-    return  detail::combine_latest_factory<Coordination, Selector, ObservableN...>(std::move(sf), std::move(s), std::move(on)...);
+auto zip(Coordination sf, Selector s, ObservableN... on)
+    ->      detail::zip_factory<Coordination, Selector, ObservableN...> {
+    return  detail::zip_factory<Coordination, Selector, ObservableN...>(std::move(sf), std::move(s), std::move(on)...);
 }
 
 }

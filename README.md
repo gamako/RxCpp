@@ -1,4 +1,7 @@
-[![Build Status](http://img.shields.io/travis/Reactive-Extensions/RxCpp.svg?style=flat-square)](https://travis-ci.org/Reactive-Extensions/RxCpp)
+Windows: [![Windows Status](http://img.shields.io/appveyor/ci/kirkshoop/RxCpp-446.svg?style=flat-square)](https://ci.appveyor.com/project/kirkshoop/rxcpp-446)
+
+Linux & OSX: [![Linux & Osx Status](http://img.shields.io/travis/Reactive-Extensions/RxCpp.svg?style=flat-square)](https://travis-ci.org/Reactive-Extensions/RxCpp)
+
 [![NuGet version](http://img.shields.io/nuget/v/RxCpp.svg?style=flat-square)](http://www.nuget.org/packages/RxCpp/)
 [![NuGet downloads](http://img.shields.io/nuget/dt/RxCpp.svg?style=flat-square)](http://www.nuget.org/packages/RxCpp/)
 
@@ -28,14 +31,14 @@ RxCpp uses CMake to create build files for several platforms and IDE's
 
 ###Ide builds
 ####XCode
-```
+```shell
 mkdir projects/build
 cd projects/build
 cmake -G"Xcode" ../CMake -B.
 ```
 
 ####Visual Studio 13
-```
+```batch
 mkdir projects\build
 cd projects\build
 cmake -G"Visual Studio 12" ..\CMake -B.
@@ -45,7 +48,7 @@ cmake -G"Visual Studio 12" ..\CMake -B.
 ###makefile builds
 
 ####OSX
-```
+```shell
 mkdir projects/build
 cd projects/build
 cmake -G"Unix Makefiles" -DCMAKE_BUILD_TYPE=RelWithDebInfo -B. ../CMake
@@ -53,7 +56,7 @@ make
 ```
 
 ####Linux --- Clang
-```
+```shell
 mkdir projects/build
 cd projects/build
 cmake -G"Unix Makefiles" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -B. ../CMake
@@ -61,7 +64,7 @@ make
 ```
 
 ####Linux --- GCC
-```
+```shell
 mkdir projects/build
 cd projects/build
 cmake -G"Unix Makefiles" -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -B. ../CMake
@@ -69,7 +72,7 @@ make
 ```
 
 ####Windows
-```
+```batch
 mkdir projects\build
 cd projects\build
 cmake -G"NMake Makefiles" -DCMAKE_BUILD_TYPE=RelWithDebInfo -B. ..\CMake
@@ -90,7 +93,7 @@ Example of by-tag
 #Using RxCpp
 Add ```Rx/v2/src``` to the include paths
 
-```
+```cpp
 #include "rxcpp/rx.hpp"
 // create alias' to simplify code
 // these are owned by the user so that

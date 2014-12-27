@@ -23,6 +23,14 @@
 #endif
 #endif
 
+#if !defined(RXCPP_DELETE)
+#if defined(_MSC_VER)
+#define RXCPP_DELETE __pragma(warning(disable: 4822)) =delete
+#else
+#define RXCPP_DELETE =delete
+#endif
+#endif
+
 #define RXCPP_CONCAT(Prefix, Suffix) Prefix ## Suffix
 #define RXCPP_CONCAT_EVALUATE(Prefix, Suffix) RXCPP_CONCAT(Prefix, Suffix)
 
@@ -79,6 +87,49 @@ struct all_true<B0, BN...>
     static const bool value = B0 && all_true<BN...>::value;
 };
 
+struct all_values_true {
+    template<class... ValueN>
+    bool operator()(ValueN... vn) const;
+
+    template<class Value0>
+    bool operator()(Value0 v0) const {
+        return v0;
+    }
+
+    template<class Value0, class... ValueN>
+    bool operator()(Value0 v0, ValueN... vn) const {
+        return v0 && all_values_true()(vn...);
+    }
+};
+
+template<class... TN>
+struct types;
+
+//
+// based on Walter Brown's void_t proposal
+// http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n3911.pdf
+//
+
+struct types_checked {};
+
+namespace detail {
+template<class... TN> struct types_checked_from {typedef types_checked type;};
+}
+
+template<class... TN>
+struct types_checked_from {typedef typename detail::types_checked_from<TN...>::type type;};
+
+
+
+template<class T, class C = types_checked>
+struct value_type_from : public std::false_type {typedef types_checked type;};
+
+template<class T>
+struct value_type_from<T, typename types_checked_from<typename T::value_type>::type>
+    : public std::true_type {typedef typename T::value_type type;};
+
+
+
 namespace detail {
 
 template<class F, class... ParamN, int... IndexN>
@@ -92,6 +143,18 @@ auto apply(std::tuple<ParamN...> p, values<int, IndexN...>, const F& f)
     return      f(std::forward<ParamN>(std::get<IndexN>(p))...);
 }
 
+template<class F_inner, class F_outer, class... ParamN, int... IndexN>
+auto apply_to_each(std::tuple<ParamN...>& p, values<int, IndexN...>, F_inner& f_inner, F_outer& f_outer)
+    -> decltype(f_outer(std::move(f_inner(std::get<IndexN>(p)))...)) {
+    return      f_outer(std::move(f_inner(std::get<IndexN>(p)))...);
+}
+
+template<class F_inner, class F_outer, class... ParamN, int... IndexN>
+auto apply_to_each(std::tuple<ParamN...>& p, values<int, IndexN...>, const F_inner& f_inner, const F_outer& f_outer)
+    -> decltype(f_outer(std::move(f_inner(std::get<IndexN>(p)))...)) {
+    return      f_outer(std::move(f_inner(std::get<IndexN>(p)))...);
+}
+
 }
 
 template<class F, class... ParamN>
@@ -103,6 +166,18 @@ template<class F, class... ParamN>
 auto apply(std::tuple<ParamN...> p, const F& f)
     -> decltype(detail::apply(std::move(p), typename values_from<int, sizeof...(ParamN)>::type(), f)) {
     return      detail::apply(std::move(p), typename values_from<int, sizeof...(ParamN)>::type(), f);
+}
+
+template<class F_inner, class F_outer, class... ParamN>
+auto apply_to_each(std::tuple<ParamN...>& p, F_inner& f_inner, F_outer& f_outer)
+    -> decltype(detail::apply_to_each(p, typename values_from<int, sizeof...(ParamN)>::type(), f_inner, f_outer)) {
+    return      detail::apply_to_each(p, typename values_from<int, sizeof...(ParamN)>::type(), f_inner, f_outer);
+}
+
+template<class F_inner, class F_outer, class... ParamN>
+auto apply_to_each(std::tuple<ParamN...>& p, const F_inner& f_inner, const F_outer& f_outer)
+    -> decltype(detail::apply_to_each(p, typename values_from<int, sizeof...(ParamN)>::type(), f_inner, f_outer)) {
+    return      detail::apply_to_each(p, typename values_from<int, sizeof...(ParamN)>::type(), f_inner, f_outer);
 }
 
 namespace detail {
@@ -280,6 +355,7 @@ struct print_function
     template<class... TN>
     void operator()(const TN&... tn) const {
         bool inserts[] = {(os << tn, true)...};
+        inserts[0] = *(inserts); // silence warning
         delimit();
     }
 
@@ -297,6 +373,8 @@ struct endline
     void operator()() const {
         os << std::endl;
     }
+private:
+    endline& operator=(const endline&) RXCPP_DELETE;
 };
 
 template<class OStream, class ValueType>
@@ -308,6 +386,8 @@ struct insert_value
     void operator()() const {
         os << value;
     }
+private:
+    insert_value& operator=(const insert_value&) RXCPP_DELETE;
 };
 
 template<class OStream, class Function>
@@ -319,6 +399,8 @@ struct insert_function
     void operator()() const {
         call(os);
     }
+private:
+    insert_function& operator=(const insert_function&) RXCPP_DELETE;
 };
 
 template<class OStream, class Delimit>
@@ -502,6 +584,35 @@ inline auto surely(const std::tuple<T...>& tpl)
     -> decltype(apply(tpl, detail::surely())) {
     return      apply(tpl, detail::surely());
 }
+
+struct list_not_empty {
+    template<class T>
+    bool operator()(std::list<T>& list) const {
+        return !list.empty();
+    }
+};
+
+struct extract_list_front {
+    // Clang optimisation loses moved list.front() value after list.pop_front(), so optimization must be switched off.
+    template<class T>
+#if defined(__clang__) && defined(__linux__)
+    // Clang on Linux has an attribute to forbid optimization
+    __attribute__((optnone))
+#endif
+    auto operator()(std::list<T>& list) const
+        -> decltype(std::move(list.front())) {
+#if defined(__clang__) && !defined(__linux__)
+        // Clang on OSX doesn't support the attribute
+        volatile auto val = std::move(list.front());
+        list.pop_front();
+        return std::move(const_cast<T&>(val));
+#else
+        auto val = std::move(list.front());
+        list.pop_front();
+        return std::move(val);
+#endif
+    }
+};
 
 namespace detail {
 
